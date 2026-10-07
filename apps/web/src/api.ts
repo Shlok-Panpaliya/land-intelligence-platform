@@ -113,3 +113,56 @@ export async function getSurveyData(
 
   return payload as SurveyData;
 }
+
+
+export type LocationOption = {
+  id: string | number;
+  name?: string | null;
+  englishName?: string | null;
+  districtId?: string | number | null;
+  talukaId?: string | number | null;
+  surveyCount?: number | null;
+  plotCount?: number | null;
+  number?: string | null;
+  villageId?: string | number | null;
+};
+
+async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const url = `${API_BASE_URL}${path}`;
+  let response: Response;
+  try {
+    response = await fetch(url, { signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new ApiError("Could not reach the Land Intelligence API. Check the API URL and deployment.");
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new ApiError(`The API returned an invalid response (HTTP ${response.status}).`, response.status);
+  }
+  if (!response.ok) {
+    const detail = typeof payload === "object" && payload !== null && "detail" in payload && typeof payload.detail === "string"
+      ? payload.detail
+      : `Request failed with HTTP ${response.status}.`;
+    throw new ApiError(detail, response.status);
+  }
+  return payload as T;
+}
+
+export function getDistricts(signal?: AbortSignal) {
+  return getJson<LocationOption[]>("/api/v1/locations/districts", signal);
+}
+
+export function getTalukas(districtId: string, signal?: AbortSignal) {
+  return getJson<LocationOption[]>(`/api/v1/locations/talukas?district_id=${encodeURIComponent(districtId)}`, signal);
+}
+
+export function getVillages(talukaId: string, signal?: AbortSignal) {
+  return getJson<LocationOption[]>(`/api/v1/locations/villages?taluka_id=${encodeURIComponent(talukaId)}`, signal);
+}
+
+export function getSurveyNumbers(villageId: string, signal?: AbortSignal) {
+  return getJson<LocationOption[]>(`/api/v1/locations/surveys?village_id=${encodeURIComponent(villageId)}`, signal);
+}
