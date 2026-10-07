@@ -99,9 +99,15 @@ function MapView({ survey }: { survey: SurveyData | null }) {
       };
 
       const feature = geometryToFeature(survey.geometry);
-      const hasGeometry = survey.geometry_available && Boolean(feature);
+      const coordinateArray = feature?.geometry && "coordinates" in feature.geometry ? feature.geometry.coordinates : null;
+      const hasGeometry = Boolean(
+        survey.geometry_available &&
+        feature &&
+        Array.isArray(coordinateArray) &&
+        coordinateArray.length > 0,
+      );
 
-      if (feature) {
+      if (hasGeometry && feature) {
         const existing = map.getSource(sourceId);
         if (existing) {
           (existing as maplibregl.GeoJSONSource).setData(feature);
