@@ -66,7 +66,7 @@ h1 { margin: 5px 0 0; font: 600 22px "Space Grotesk"; letter-spacing: -.03em; }
 }
 .search-box:focus-within { border-color: #697786; box-shadow: 0 0 0 2px rgba(210, 220, 230, .05); }
 .search-box span { color: #7f8a96; font-size: 20px; }
-.search-box input, .village-field input {
+.search-box input, .village-field input, .village-field select {
   flex: 1;
   background: transparent;
   border: 0;
