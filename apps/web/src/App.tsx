@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl, { type Map as MapLibreMap } from "maplibre-gl";
-import { ApiError, getSurveyData, type SurveyData, type SurveyRecord } from "./api";
+import { ApiError, getDistricts, getSurveyData, getSurveyNumbers, getTalukas, getVillages, type LocationOption, type SurveyData, type SurveyRecord } from "./api";
 
 type SearchMode = "survey" | "owner" | "village";
 
@@ -174,12 +174,65 @@ function MapView({ survey }: { survey: SurveyData | null }) {
 export default function App() {
   const [mode, setMode] = useState<SearchMode>("survey");
   const [query, setQuery] = useState("10");
+  const [districtId, setDistrictId] = useState("7");
+  const [talukaId, setTalukaId] = useState("9");
   const [villageId, setVillageId] = useState(DEMO_VILLAGE_ID);
+  const [districts, setDistricts] = useState<LocationOption[]>([]);
+  const [talukas, setTalukas] = useState<LocationOption[]>([]);
+  const [villages, setVillages] = useState<LocationOption[]>([]);
+  const [surveyNumbers, setSurveyNumbers] = useState<LocationOption[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(true);
   const [survey, setSurvey] = useState<SurveyData | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<SurveyRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getDistricts(controller.signal).then(setDistricts).catch((err) => {
+      if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof ApiError ? err.message : "Unable to load districts.");
+    }).finally(() => {
+      if (!controller.signal.aborted) setLocationsLoading(false);
+    });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!districtId) { setTalukas([]); return; }
+    const controller = new AbortController();
+    getTalukas(districtId, controller.signal).then((items) => {
+      setTalukas(items);
+      if (!items.some((item) => String(item.id) === talukaId)) setTalukaId(String(items[0]?.id ?? ""));
+    }).catch((err) => {
+      if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof ApiError ? err.message : "Unable to load talukas.");
+    });
+    return () => controller.abort();
+  }, [districtId]);
+
+  useEffect(() => {
+    if (!talukaId) { setVillages([]); return; }
+    const controller = new AbortController();
+    getVillages(talukaId, controller.signal).then((items) => {
+      setVillages(items);
+      if (!items.some((item) => String(item.id) === villageId)) {
+        const preferred = items.find((item) => String(item.id) === DEMO_VILLAGE_ID);
+        setVillageId(String(preferred?.id ?? items[0]?.id ?? ""));
+      }
+    }).catch((err) => {
+      if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof ApiError ? err.message : "Unable to load villages.");
+    });
+    return () => controller.abort();
+  }, [talukaId]);
+
+  useEffect(() => {
+    if (!villageId) { setSurveyNumbers([]); return; }
+    const controller = new AbortController();
+    getSurveyNumbers(villageId, controller.signal).then(setSurveyNumbers).catch((err) => {
+      if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof ApiError ? err.message : "Unable to load survey numbers.");
+    });
+    return () => controller.abort();
+  }, [villageId]);
 
   const loadSurvey = useCallback(async () => {
     if (mode !== "survey") {
@@ -250,36 +303,32 @@ export default function App() {
               void loadSurvey();
             }}
           >
-            <div className="search-box">
-              <span>⌕</span>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={mode === "survey" ? "Survey number, e.g. 10" : `Search ${mode}...`}
-                aria-label="Search"
-              />
-              <kbd>⌘ K</kbd>
-            </div>
-
-            {mode === "survey" && (
-              <div className="village-field">
-                <label htmlFor="village-id">Village ID</label>
-                <input
-                  id="village-id"
-                  value={villageId}
-                  onChange={(event) => setVillageId(event.target.value)}
-                  placeholder="Maharashtra village identifier"
-                />
+            {mode === "survey" ? (
+              <>
+                <LocationSelect label="District" value={districtId} options={districts} disabled={locationsLoading} onChange={setDistrictId} />
+                <LocationSelect label="Taluka" value={talukaId} options={talukas} disabled={!districtId || locationsLoading} onChange={setTalukaId} />
+                <LocationSelect label="Village" value={villageId} options={villages} disabled={!talukaId || locationsLoading} onChange={setVillageId} />
+                <div className="village-field">
+                  <label htmlFor="survey-number">Survey number</label>
+                  <input id="survey-number" list="survey-number-options" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="e.g. 10" autoComplete="off" />
+                  <datalist id="survey-number-options">
+                    {surveyNumbers.map((item) => <option key={String(item.id)} value={String(item.number ?? item.name ?? "")} />)}
+                  </datalist>
+                </div>
+              </>
+            ) : (
+              <div className="search-box">
+                <span>⌕</span>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={"Search " + mode + "..."} aria-label="Search" />
               </div>
             )}
-
-            <button className="search-button" type="submit" disabled={loading || mode !== "survey"}>
+            <button className="search-button" type="submit" disabled={loading || mode !== "survey" || !districtId || !talukaId || !villageId || !query.trim()}>
               {loading ? "Loading survey…" : "Open survey"}
             </button>
           </form>
 
           <div className="hint">
-            Survey search is connected to the deployed Land Intelligence API. The API resolves the authoritative survey geometry and land-record attributes.
+            Select a Maharashtra location, then open a survey number. Internal government identifiers stay behind the Land Intelligence API.
           </div>
 
           {error && <div className="error-box">{error}</div>}
@@ -293,7 +342,7 @@ export default function App() {
             <div className="label">SURVEY / PLOT</div>
             <div className="survey-number">{(survey?.survey.number ?? query) || "—"}</div>
             <div className="survey-meta">
-              <div><span>Village ID</span><strong>{survey?.survey.village_id ?? villageId}</strong></div>
+              <div><span>Village</span><strong>{displayName(villages, survey?.survey.village_id ?? villageId)}</strong></div>
               <div><span>GIS code</span><strong>{survey?.survey.gis_code ?? "—"}</strong></div>
               <div><span>Plot ID</span><strong title={survey?.survey.plot_id ?? ""}>{survey?.survey.plot_id ? `${survey.survey.plot_id.slice(0, 10)}…` : "—"}</strong></div>
             </div>
@@ -419,6 +468,33 @@ export default function App() {
           </div>
         </aside>
       </main>
+    </div>
+  );
+}
+
+function displayName(options: LocationOption[], id: string | number | null | undefined) {
+  const item = options.find((option) => String(option.id) === String(id));
+  return item?.englishName || item?.name || String(id ?? "—");
+}
+
+function LocationSelect({ label, value, options, disabled, onChange }: {
+  label: string;
+  value: string;
+  options: LocationOption[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="village-field">
+      <label>{label}</label>
+      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Select {label.toLowerCase()}…</option>
+        {options.map((option) => (
+          <option key={String(option.id)} value={String(option.id)}>
+            {option.englishName || option.name || option.id}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
