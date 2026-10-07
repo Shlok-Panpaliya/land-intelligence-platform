@@ -87,6 +87,7 @@ function MapView({ survey }: { survey: SurveyData | null }) {
       const lineId = "survey-line";
       const labelId = "survey-label";
       const extentSourceId = "survey-extent";
+      const extentFillId = "survey-extent-fill";
       const extentLineId = "survey-extent-line";
       const extentLabelId = "survey-extent-label";
 
@@ -97,8 +98,8 @@ function MapView({ survey }: { survey: SurveyData | null }) {
         if (map.getSource(sourceIdToRemove)) map.removeSource(sourceIdToRemove);
       };
 
-      const hasGeometry = Boolean(survey.geometry);
-      const feature = hasGeometry ? geometryToFeature(survey.geometry) : null;
+      const feature = geometryToFeature(survey.geometry);
+      const hasGeometry = survey.geometry_available && Boolean(feature);
 
       if (feature) {
         const existing = map.getSource(sourceId);
@@ -143,7 +144,7 @@ function MapView({ survey }: { survey: SurveyData | null }) {
           });
         }
 
-        removeLayerAndSource([extentLineId, extentLabelId], extentSourceId);
+        removeLayerAndSource([extentFillId, extentLineId, extentLabelId], extentSourceId);
       } else {
         removeLayerAndSource([fillId, lineId, labelId], sourceId);
 
@@ -178,6 +179,15 @@ function MapView({ survey }: { survey: SurveyData | null }) {
           } else {
             map.addSource(extentSourceId, { type: "geojson", data: extentFeature });
             map.addLayer({
+              id: extentFillId,
+              type: "fill",
+              source: extentSourceId,
+              paint: {
+                "fill-color": "#f3df65",
+                "fill-opacity": 0.10,
+              },
+            });
+            map.addLayer({
               id: extentLineId,
               type: "line",
               source: extentSourceId,
@@ -205,7 +215,7 @@ function MapView({ survey }: { survey: SurveyData | null }) {
             });
           }
         } else {
-          removeLayerAndSource([extentLineId, extentLabelId], extentSourceId);
+          removeLayerAndSource([extentFillId, extentLineId, extentLabelId], extentSourceId);
         }
       }
 
