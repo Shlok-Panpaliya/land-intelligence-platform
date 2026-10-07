@@ -89,6 +89,9 @@ function MapView({ survey }: { survey: SurveyData | null }) {
       const fillId = "survey-fill";
       const lineId = "survey-line";
       const labelId = "survey-label";
+      const extentSourceId = "survey-extent";
+      const extentLineId = "survey-extent-line";
+      const extentLabelId = "survey-extent-label";
 
       const existing = map.getSource(sourceId);
       if (existing) {
@@ -133,6 +136,75 @@ function MapView({ survey }: { survey: SurveyData | null }) {
       }
 
       const bbox = survey.bbox;
+      const bboxValid =
+        bbox &&
+        [bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax].every(
+          (value) => value !== null && Number.isFinite(Number(value)),
+        );
+
+      // A bbox is an authoritative extent, not the survey boundary. When the
+      // upstream source does not provide polygon geometry, show it as a
+      // dashed "approximate extent" so the user can orient themselves without
+      // implying that we know the exact parcel boundary.
+      if (!survey.geometry && bboxValid) {
+        const extentFeature: GeoJSON.Feature<GeoJSON.Polygon> = {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Polygon",
+            coordinates: [[
+              [Number(bbox!.xmin), Number(bbox!.ymin)],
+              [Number(bbox!.xmax), Number(bbox!.ymin)],
+              [Number(bbox!.xmax), Number(bbox!.ymax)],
+              [Number(bbox!.xmin), Number(bbox!.ymax)],
+              [Number(bbox!.xmin), Number(bbox!.ymin)],
+            ]],
+          },
+        };
+
+        const existingExtent = map.getSource(extentSourceId);
+        if (existingExtent) {
+          (existingExtent as maplibregl.GeoJSONSource).setData(extentFeature);
+        } else {
+          map.addSource(extentSourceId, { type: "geojson", data: extentFeature });
+          map.addLayer({
+            id: extentLineId,
+            type: "line",
+            source: extentSourceId,
+            paint: {
+              "line-color": "#f3df65",
+              "line-width": 2,
+              "line-opacity": 0.9,
+              "line-dasharray": [2, 2],
+            },
+          });
+          map.addLayer({
+            id: extentLabelId,
+            type: "symbol",
+            source: extentSourceId,
+            layout: {
+              "text-field": "Approximate survey extent",
+              "text-size": 11,
+              "text-font": ["Open Sans Regular"],
+              "text-allow-overlap": true,
+            },
+            paint: {
+              "text-color": "#f3df65",
+              "text-halo-color": "#151a1f",
+              "text-halo-width": 2,
+            },
+          });
+        }
+      } else {
+        const existingExtent = map.getSource(extentSourceId);
+        if (existingExtent) {
+          (existingExtent as maplibregl.GeoJSONSource).setData({
+            type: "Feature",
+            properties: {},
+            geometry: { type: "Polygon", coordinates: [[]] },
+          });
+        }
+      }
       if (
         bbox &&
         [bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax].every(
