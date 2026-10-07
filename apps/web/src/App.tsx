@@ -291,7 +291,7 @@ export default function App() {
 
           <div className="survey-card">
             <div className="label">SURVEY / PLOT</div>
-            <div className="survey-number">{survey?.survey.number ?? query || "—"}</div>
+            <div className="survey-number">{(survey?.survey.number ?? query) || "—"}</div>
             <div className="survey-meta">
               <div><span>Village ID</span><strong>{survey?.survey.village_id ?? villageId}</strong></div>
               <div><span>GIS code</span><strong>{survey?.survey.gis_code ?? "—"}</strong></div>
