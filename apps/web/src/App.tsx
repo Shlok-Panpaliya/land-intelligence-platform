@@ -79,10 +79,7 @@ function MapView({ survey }: { survey: SurveyData | null }) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !survey?.geometry) return;
-
-    const feature = geometryToFeature(survey.geometry);
-    if (!feature) return;
+    if (!map || !survey) return;
 
     const renderSurvey = () => {
       const sourceId = "survey-boundary";
@@ -93,46 +90,123 @@ function MapView({ survey }: { survey: SurveyData | null }) {
       const extentLineId = "survey-extent-line";
       const extentLabelId = "survey-extent-label";
 
-      const existing = map.getSource(sourceId);
-      if (existing) {
-        (existing as maplibregl.GeoJSONSource).setData(feature);
+      const removeLayerAndSource = (layerIds: string[], sourceIdToRemove: string) => {
+        layerIds.forEach((id) => {
+          if (map.getLayer(id)) map.removeLayer(id);
+        });
+        if (map.getSource(sourceIdToRemove)) map.removeSource(sourceIdToRemove);
+      };
+
+      const hasGeometry = Boolean(survey.geometry);
+      const feature = hasGeometry ? geometryToFeature(survey.geometry) : null;
+
+      if (feature) {
+        const existing = map.getSource(sourceId);
+        if (existing) {
+          (existing as maplibregl.GeoJSONSource).setData(feature);
+        } else {
+          map.addSource(sourceId, { type: "geojson", data: feature });
+          map.addLayer({
+            id: fillId,
+            type: "fill",
+            source: sourceId,
+            paint: {
+              "fill-color": "#c8b84d",
+              "fill-opacity": 0.22,
+            },
+          });
+          map.addLayer({
+            id: lineId,
+            type: "line",
+            source: sourceId,
+            paint: {
+              "line-color": "#f3df65",
+              "line-width": 3,
+              "line-opacity": 0.95,
+            },
+          });
+          map.addLayer({
+            id: labelId,
+            type: "symbol",
+            source: sourceId,
+            layout: {
+              "text-field": `Survey ${survey.survey.number}`,
+              "text-size": 13,
+              "text-font": ["Open Sans Regular"],
+              "text-allow-overlap": true,
+            },
+            paint: {
+              "text-color": "#fff8b4",
+              "text-halo-color": "#151a1f",
+              "text-halo-width": 2,
+            },
+          });
+        }
+
+        removeLayerAndSource([extentLineId, extentLabelId], extentSourceId);
       } else {
-        map.addSource(sourceId, { type: "geojson", data: feature });
-        map.addLayer({
-          id: fillId,
-          type: "fill",
-          source: sourceId,
-          paint: {
-            "fill-color": "#c8b84d",
-            "fill-opacity": 0.22,
-          },
-        });
-        map.addLayer({
-          id: lineId,
-          type: "line",
-          source: sourceId,
-          paint: {
-            "line-color": "#f3df65",
-            "line-width": 3,
-            "line-opacity": 0.95,
-          },
-        });
-        map.addLayer({
-          id: labelId,
-          type: "symbol",
-          source: sourceId,
-          layout: {
-            "text-field": `Survey ${survey.survey.number}`,
-            "text-size": 13,
-            "text-font": ["Open Sans Regular"],
-            "text-allow-overlap": true,
-          },
-          paint: {
-            "text-color": "#fff8b4",
-            "text-halo-color": "#151a1f",
-            "text-halo-width": 2,
-          },
-        });
+        removeLayerAndSource([fillId, lineId, labelId], sourceId);
+
+        const bbox = survey.bbox;
+        const bboxValid =
+          bbox &&
+          [bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax].every(
+            (value) => value !== null && Number.isFinite(Number(value)),
+          ) &&
+          Number(bbox.xmin) < Number(bbox.xmax) &&
+          Number(bbox.ymin) < Number(bbox.ymax);
+
+        if (bboxValid) {
+          const extentFeature: GeoJSON.Feature<GeoJSON.Polygon> = {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "Polygon",
+              coordinates: [[
+                [Number(bbox!.xmin), Number(bbox!.ymin)],
+                [Number(bbox!.xmax), Number(bbox!.ymin)],
+                [Number(bbox!.xmax), Number(bbox!.ymax)],
+                [Number(bbox!.xmin), Number(bbox!.ymax)],
+                [Number(bbox!.xmin), Number(bbox!.ymin)],
+              ]],
+            },
+          };
+
+          const existingExtent = map.getSource(extentSourceId);
+          if (existingExtent) {
+            (existingExtent as maplibregl.GeoJSONSource).setData(extentFeature);
+          } else {
+            map.addSource(extentSourceId, { type: "geojson", data: extentFeature });
+            map.addLayer({
+              id: extentLineId,
+              type: "line",
+              source: extentSourceId,
+              paint: {
+                "line-color": "#f3df65",
+                "line-width": 3,
+                "line-opacity": 0.95,
+                "line-dasharray": [2, 2],
+              },
+            });
+            map.addLayer({
+              id: extentLabelId,
+              type: "symbol",
+              source: extentSourceId,
+              layout: {
+                "text-field": `Approximate extent · Survey ${survey.survey.number}`,
+                "text-size": 11,
+                "text-allow-overlap": true,
+              },
+              paint: {
+                "text-color": "#f3df65",
+                "text-halo-color": "#151a1f",
+                "text-halo-width": 2,
+              },
+            });
+          }
+        } else {
+          removeLayerAndSource([extentLineId, extentLabelId], extentSourceId);
+        }
       }
 
       const bbox = survey.bbox;
@@ -140,77 +214,11 @@ function MapView({ survey }: { survey: SurveyData | null }) {
         bbox &&
         [bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax].every(
           (value) => value !== null && Number.isFinite(Number(value)),
-        );
+        ) &&
+        Number(bbox.xmin) < Number(bbox.xmax) &&
+        Number(bbox.ymin) < Number(bbox.ymax);
 
-      // A bbox is an authoritative extent, not the survey boundary. When the
-      // upstream source does not provide polygon geometry, show it as a
-      // dashed "approximate extent" so the user can orient themselves without
-      // implying that we know the exact parcel boundary.
-      if (!survey.geometry && bboxValid) {
-        const extentFeature: GeoJSON.Feature<GeoJSON.Polygon> = {
-          type: "Feature",
-          properties: {},
-          geometry: {
-            type: "Polygon",
-            coordinates: [[
-              [Number(bbox!.xmin), Number(bbox!.ymin)],
-              [Number(bbox!.xmax), Number(bbox!.ymin)],
-              [Number(bbox!.xmax), Number(bbox!.ymax)],
-              [Number(bbox!.xmin), Number(bbox!.ymax)],
-              [Number(bbox!.xmin), Number(bbox!.ymin)],
-            ]],
-          },
-        };
-
-        const existingExtent = map.getSource(extentSourceId);
-        if (existingExtent) {
-          (existingExtent as maplibregl.GeoJSONSource).setData(extentFeature);
-        } else {
-          map.addSource(extentSourceId, { type: "geojson", data: extentFeature });
-          map.addLayer({
-            id: extentLineId,
-            type: "line",
-            source: extentSourceId,
-            paint: {
-              "line-color": "#f3df65",
-              "line-width": 2,
-              "line-opacity": 0.9,
-              "line-dasharray": [2, 2],
-            },
-          });
-          map.addLayer({
-            id: extentLabelId,
-            type: "symbol",
-            source: extentSourceId,
-            layout: {
-              "text-field": "Approximate survey extent",
-              "text-size": 11,
-              "text-font": ["Open Sans Regular"],
-              "text-allow-overlap": true,
-            },
-            paint: {
-              "text-color": "#f3df65",
-              "text-halo-color": "#151a1f",
-              "text-halo-width": 2,
-            },
-          });
-        }
-      } else {
-        const existingExtent = map.getSource(extentSourceId);
-        if (existingExtent) {
-          (existingExtent as maplibregl.GeoJSONSource).setData({
-            type: "Feature",
-            properties: {},
-            geometry: { type: "Polygon", coordinates: [[]] },
-          });
-        }
-      }
-      if (
-        bbox &&
-        [bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax].every(
-          (value) => value !== null && Number.isFinite(Number(value)),
-        )
-      ) {
+      if (bboxValid) {
         map.fitBounds(
           [
             [Number(bbox.xmin), Number(bbox.ymin)],
@@ -218,7 +226,7 @@ function MapView({ survey }: { survey: SurveyData | null }) {
           ],
           { padding: 110, duration: 800, maxZoom: 18 },
         );
-      } else {
+      } else if (feature) {
         const bounds = new maplibregl.LngLatBounds();
         const coordinates = feature.geometry.type === "Polygon"
           ? feature.geometry.coordinates.flat(1)
@@ -238,7 +246,12 @@ function MapView({ survey }: { survey: SurveyData | null }) {
     } else {
       map.once("load", renderSurvey);
     }
+
+    return () => {
+      map.off("load", renderSurvey);
+    };
   }, [survey]);
+
 
   return <div ref={containerRef} className="map-canvas" />;
 }
