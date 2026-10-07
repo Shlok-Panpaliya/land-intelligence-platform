@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.settings import settings
+from app.routers.surveys import router as surveys_router
 
 app = FastAPI(title="Land Intelligence API", version="0.1.0", description="Survey-level land intelligence API for Maharashtra.")
 
@@ -19,3 +20,5 @@ def health() -> dict[str, str]:
 @app.get("/api/v1")
 def api_root() -> dict[str, str]:
     return {"service": "land-intelligence-api", "version": "v1"}
+
+app.include_router(surveys_router)
